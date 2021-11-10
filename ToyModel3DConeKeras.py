@@ -1,4 +1,4 @@
-###################################################################################################
+##################################################################################################
 #
 # ToyModel3DConeKeras.py
 #
@@ -24,8 +24,6 @@ from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 
 import tensorflow as tf
-
-from keras import models
 
 import numpy as np
 
@@ -118,7 +116,8 @@ class ToyModel3DCone:
 
 ###################################################################################################
 
-  def SaveImages(self, XSingle, YSingle, Title, FigureNumber=0):
+
+  def Plot2D(self, XSingle, YSingle, Title, FigureNumber = 0):
     '''
     A function for plotting 4 slices of the model in one figure
     '''
@@ -126,38 +125,32 @@ class ToyModel3DCone:
     XV, YV = np.meshgrid(self.gGridCentersXY, self.gGridCentersXY)
     Z = np.zeros(shape=(self.gTrainingGridXY, self.gTrainingGridXY))
     
-    print(FigureNumber)
-        
     fig = plt.figure(FigureNumber)
+    plt.clf()
     plt.subplots_adjust(hspace=0.5)
-#
+
     fig.canvas.set_window_title(Title)
 
     for i in range(1, 5):
 
-      zGridElement = int((i - 1) * self.gTrainingGridZ / 4)
+      zGridElement = int((i-1)*self.gTrainingGridZ/4)
 
       for x in range(self.gTrainingGridXY):
         for y in range(self.gTrainingGridXY):
-          Z[x, y] = YSingle[0, x + y * self.gTrainingGridXY + zGridElement * self.gTrainingGridXY * self.gTrainingGridXY]
-
+          Z[x, y] = YSingle[0, x + y*self.gTrainingGridXY + zGridElement*self.gTrainingGridXY*self.gTrainingGridXY]
+      
       ax = fig.add_subplot(2, 2, i)
       ax.set_title("Slice through z={}".format(self.gGridCentersZ[zGridElement]))
-      # contour = ax.contourf(XV, YV, Z)
-      ax.contourf(XV, YV, Z)
-      
+      contour = ax.contourf(XV, YV, Z)
 
-      
     plt.ion()
     plt.show()
     plt.pause(0.001)
-
+    
     if FigureNumber == 1:
       plt.savefig(self.OutputPrefix + "_Original.png")
     else:
-      plt.savefig(Title + "_Result.png")
-      
-    plt.close(fig)
+      plt.savefig(self.OutputPrefix + "_Result.png")
 
 
 ###################################################################################################
@@ -237,10 +230,11 @@ class ToyModel3DCone:
 
   def train(self):
     '''
-    Perform the neural network training
+    Perfrom the neural network training
     '''
         
     print("Info: Creating %i data sets" % (self.TrainingBatchSize + self.TestBatchSize))
+
         
     XTrain = np.zeros(shape=(self.TrainingBatchSize, self.InputDataSpaceSize))
     YTrain = np.zeros(shape=(self.TrainingBatchSize, self.OutputDataSpaceSize))
@@ -280,14 +274,12 @@ class ToyModel3DCone:
 
     XSingle = XTest[0:1]
     YSingle = YTest[0:1]
-    self.SaveImages(XSingle, YSingle, "Original", 1)
+    if self.UseBatchMode == False:
+      self.Plot2D(XSingle, YSingle, "Original", 1)
 
 
     TimesNoImprovement = 0
-    bestLoss = sys.maxsize
-    lossArray = []
-    performanceCheck = 20
-
+    BestMeanSquaredError = 10**30 #sys.float_info.max
 
     for Iteration in range(0, 50000):
       
@@ -296,54 +288,29 @@ class ToyModel3DCone:
       if Interrupted == True: break
 
       # Train
-      # history = Model.fit(XTrain, YTrain, verbose=2, epochs = 20, batch_size=self.TrainingBatchSize,  validation_data=(XTest, YTest))
-      
       history = Model.fit(XTrain, YTrain, verbose=2, batch_size=self.TrainingBatchSize,  validation_data=(XTest, YTest))
 
-    
-
-      
+        
       # Check performance: Mean squared error
-      if Iteration > 0 and Iteration % performanceCheck == 0:
-        # print(history.history.keys())
-        # print(history.history['loss'])
-        # plt.show()
-
-        # plt.plot(history.history['loss'])
-        newLoss = history.history['loss']
-        newLoss = newLoss[0]
-        # lossArray.append(newLoss)
-
-        # sess = tf.compat.v1.Session()
+      if Iteration > 0 and Iteration % 20 == 0:
         #MeanSquaredError = sess.run(tf.nn.l2_loss(Output - YTest)/self.TestBatchSize,  feed_dict={X: XTest})
-        # currLoss = sess.run(loss,  feed_dict={X: XTest})
-        # tf.print(loss, "\n")
-
-        # RunOut = Model.predict(XTest)
-        # MeanSquaredError = math.sqrt(np.sum((YTest - RunOut)**2))
+        RunOut = Model.predict(XTest)
+        MeanSquaredError = math.sqrt(np.sum((YTest - RunOut)**2))
   
-        print("Iteration {} - Loss of test data: {}".format(Iteration, newLoss))
+        print("Iteration {} - MSE of test data: {}".format(Iteration, MeanSquaredError))
 
-        if newLoss <= bestLoss:    # We need equal here since later ones are usually better distributed
-            bestLoss = newLoss
-            TimesNoImprovement = 0
+        if MeanSquaredError <= BestMeanSquaredError:    # We need equal here since later ones are usually better distributed
+          BestMeanSquaredError = MeanSquaredError
+          TimesNoImprovement = 0
           
           #Saver.save(sess, "model.ckpt")
           
-            Model.save('currRunBest.h5')
-          # print('Model Saved!')
- 
-          # load model
-          # savedModel= models.load_model('gfgModel.h5')
-          # savedModel.summary()
-
           # Test just the first test case:
-            YOutSingle = Model.predict(XSingle)
+          YOutSingle = Model.predict(XSingle)
           
-            if self.UseBatchMode == False:
-                self.SaveImages(XSingle, YSingle, "Reconstructed at iteration {}".format(Iteration), 2)
-
-
+          if self.UseBatchMode == False:
+            self.Plot2D(XSingle, YOutSingle, "Reconstructed at iteration {}".format(Iteration), 2)
+          
         else:
           TimesNoImprovement += 1
       else:
