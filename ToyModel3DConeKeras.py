@@ -21,14 +21,23 @@ import time
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
+# from matplotlib.ticker import LinearLocator, FormatStrFormatter
+from matplotlib import ticker
 
 import tensorflow as tf
+from keras import models
+
+import imageio
+import pickle
 
 import numpy as np
 
 # Own tools
 from helpers import *
+
+from scipy.signal import convolve2d
+import scipy.ndimage as ndimage
+from skimage import feature
 
 
 
@@ -100,6 +109,15 @@ class ToyModel3DCone:
 
     self.NTestingBatches = 1
     self.TestBatchSize = self.NTestingBatches*self.SubBatchSize
+    
+    self.gif1 = []
+    self.gif2 = []
+    self.gif3 = []
+    self.gif4 = []
+    self.gif5 = []
+
+    self.lossGif = []
+
 
 
 
@@ -117,13 +135,15 @@ class ToyModel3DCone:
 ###################################################################################################
 
 
-  def Plot2D(self, XSingle, YSingle, Title, FigureNumber = 0):
+  def SaveImages_Compare(self, XSingle, YOriginal, YSingle, Iteration, Title, FigureNumber = 0, isFiltered = 0):
     '''
     A function for plotting 4 slices of the model in one figure
     '''
 
     XV, YV = np.meshgrid(self.gGridCentersXY, self.gGridCentersXY)
     Z = np.zeros(shape=(self.gTrainingGridXY, self.gTrainingGridXY))
+    Z_Original = np.zeros(shape=(self.gTrainingGridXY, self.gTrainingGridXY))
+
     
     fig = plt.figure(FigureNumber)
     plt.clf()
@@ -138,22 +158,246 @@ class ToyModel3DCone:
       for x in range(self.gTrainingGridXY):
         for y in range(self.gTrainingGridXY):
           Z[x, y] = YSingle[0, x + y*self.gTrainingGridXY + zGridElement*self.gTrainingGridXY*self.gTrainingGridXY]
+          Z_Original[x,y] = YOriginal[0, x + y*self.gTrainingGridXY + zGridElement*self.gTrainingGridXY*self.gTrainingGridXY]
+
+      if isFiltered:
+        # Z[Z < np.average(Z)] = 0
+        m = 3
+        n = 3
+        win = np.ones((m, n))  # Moving average filter window
+        win /= win.sum()
+        # win = np.array([[ -3-3j, 0-10j,  +3 -3j],
+        # [-10+0j, 0+ 0j, +10 +0j],
+        # [ -3+3j, 0+10j,  +3 +3j]])
+
+        # Z = convolve2d(Z, win, mode='same', boundary='symm') - Performing matrix convolution with custom filter window 'win'
+        # Z = ndimage.gaussian_filter(Z, 2) #Gaussian Filter
+        # Z[Z < np.average(Z)] = 0 - No clipping
+        # Z = feature.canny(Z)  Doesn't work
+        Z = ndimage.median_filter(Z, size=3)  # Median filter
+      
+      
       
       ax = fig.add_subplot(2, 2, i)
       ax.set_title("Slice through z={}".format(self.gGridCentersZ[zGridElement]))
-      contour = ax.contourf(XV, YV, Z)
+      contour = ax.contourf(XV, YV, Z_Original - Z, levels= np.linspace(-3, 3, 20))
+      cb = fig.colorbar(contour)
+      tick_locator = ticker.MaxNLocator(nbins=5)
+      cb.locator = tick_locator
+      cb.update_ticks()
+      
+      
+    if self.UseBatchMode == False:
+        plt.ion()
+        plt.show()
+        plt.pause(0.001)
 
-    plt.ion()
-    plt.show()
-    plt.pause(0.001)
-    
+
+
     if FigureNumber == 1:
       plt.savefig(self.OutputPrefix + "_Original.png")
-    else:
-      plt.savefig(self.OutputPrefix + "_Result.png")
+      plt.suptitle("Original Image")
+
+
+    elif FigureNumber == 2:
+      # plt.savefig(Title + "_Result.png")
+      plt.suptitle("Unfiltered: Frame {}".format(Iteration))
+      plt.savefig(self.OutputPrefix + "_Unfiltered.png")
+      image = imageio.imread(self.OutputPrefix + "_Unfiltered.png")
+      self.gif2.append(image)
+      imageio.mimwrite('Unfiltered.gif', self.gif2, format='.gif', fps=1)
+
+    elif FigureNumber == 3:
+      # plt.savefig(Title + "_Result.png")
+      plt.suptitle("Filtered: Frame {}".format(Iteration))
+      plt.savefig(self.OutputPrefix + "_Filtered.png")
+      image = imageio.imread(self.OutputPrefix + "_Filtered.png")
+      self.gif3.append(image)
+      imageio.mimwrite('Filtered.gif', self.gif3, format='.gif', fps=1)
+
+    elif FigureNumber == 4:
+      # plt.savefig(Title + "_Result.png")
+      plt.suptitle("Diff with No Filter: Frame {}".format(Iteration))
+      plt.savefig(self.OutputPrefix + "_DiffNoFilt.png")
+      image = imageio.imread(self.OutputPrefix + "_DiffNoFilt.png")
+      self.gif4.append(image)
+      imageio.mimwrite('DiffNoFilter.gif', self.gif4, format='.gif', fps=1)
+
+    elif FigureNumber == 5:
+      # plt.savefig(Title + "_Result.png")
+      plt.suptitle("Diff With Filter: Frame {}".format(Iteration))
+
+      plt.savefig(self.OutputPrefix + "_DiffFilt.png")
+      image = imageio.imread(self.OutputPrefix + "_DiffFilt.png")
+      self.gif5.append(image)
+      imageio.mimwrite('DiffWithFilter.gif', self.gif5, format='.gif', fps=1)
 
 
 ###################################################################################################
+
+
+
+  def SaveImages_Original(self, XSingle, YSingle, Iteration, Title, FigureNumber=0, isFiltered=0):
+        '''
+        A function for plotting 4 slices of the model in one figure
+        '''
+
+        XV, YV = np.meshgrid(self.gGridCentersXY, self.gGridCentersXY)
+        Z = np.zeros(shape=(self.gTrainingGridXY, self.gTrainingGridXY))
+        Z_Original = np.zeros(shape=(self.gTrainingGridXY, self.gTrainingGridXY))
+
+        fig = plt.figure(FigureNumber)
+        plt.clf()
+        plt.subplots_adjust(hspace=0.5)
+
+        fig.canvas.set_window_title(Title)
+
+        for i in range(1, 5):
+
+          zGridElement = int((i - 1) * self.gTrainingGridZ / 4)
+
+          for x in range(self.gTrainingGridXY):
+            for y in range(self.gTrainingGridXY):
+              Z[x, y] = YSingle[0, x + y * self.gTrainingGridXY + zGridElement * self.gTrainingGridXY * self.gTrainingGridXY]
+              Z_Original[x, y] = YSingle[0, x + y * self.gTrainingGridXY + zGridElement * self.gTrainingGridXY * self.gTrainingGridXY]
+
+          if isFiltered:
+            # Z[Z < np.average(Z)] = 0
+            m = 3
+            n = 3
+            win = np.ones((m, n))  # Moving average filter window
+            win /= win.sum()
+            # win = np.array([[ -3-3j, 0-10j,  +3 -3j],
+            # [-10+0j, 0+ 0j, +10 +0j],
+            # [ -3+3j, 0+10j,  +3 +3j]])
+
+            # Z = convolve2d(Z, win, mode='same', boundary='symm') - Performing matrix convolution with custom filter window 'win'
+            # Z = ndimage.gaussian_filter(Z, 2) #Gaussian Filter
+            # Z[Z < np.average(Z)] = 0 - No clipping
+            # Z = feature.canny(Z)  Doesn't work
+            Z = ndimage.median_filter(Z, size=3)  # Median filter
+
+          ax = fig.add_subplot(2, 2, i)
+          ax.set_title("Slice through z={}".format(self.gGridCentersZ[zGridElement]))
+          contour = ax.contourf(XV, YV, Z, levels = np.linspace(-.5, 3.5, 20))
+
+          cb = fig.colorbar(contour)
+          tick_locator = ticker.MaxNLocator(nbins=5)
+          cb.locator = tick_locator
+          cb.update_ticks()
+
+        if self.UseBatchMode == False:
+          plt.ion()
+          plt.show()
+          plt.pause(0.001)
+
+
+        if FigureNumber == 1:
+          plt.savefig(self.OutputPrefix + "_Original.png")
+          plt.suptitle("Original")
+
+
+        elif FigureNumber == 2:
+          # plt.savefig(Title + "_Result.png")
+          plt.suptitle("Unfiltered: Frame {}".format(Iteration))
+
+          plt.savefig(self.OutputPrefix + "_Unfiltered.png")
+          image = imageio.imread(self.OutputPrefix + "_Unfiltered.png")
+          self.gif2.append(image)
+          imageio.mimwrite('Unfiltered.gif', self.gif2, format='.gif', fps=1)
+
+        elif FigureNumber == 3:
+          # plt.savefig(Title + "_Result.png")
+          plt.suptitle("Filtered: Frame {}".format(Iteration))
+
+          plt.savefig(self.OutputPrefix + "_Filtered.png")
+          image = imageio.imread(self.OutputPrefix + "_Filtered.png")
+          self.gif3.append(image)
+          imageio.mimwrite('Filtered.gif', self.gif3, format='.gif', fps=1)
+
+        elif FigureNumber == 4:
+          # plt.savefig(Title + "_Result.png")
+          plt.suptitle("Diff No Filter: Frame {}".format(Iteration))
+
+          plt.savefig(self.OutputPrefix + "_DiffNoFilt.png")
+          image = imageio.imread(self.OutputPrefix + "_DiffNoFilt.png")
+          self.gif4.append(image)
+          imageio.mimwrite('DiffNoFilter.gif', self.gif4, format='.gif', fps=1)
+
+        elif FigureNumber == 5:
+          # plt.savefig(Title + "_Result.png")
+          plt.suptitle("Diff With Filter: Frame {}".format(Iteration))
+
+          plt.savefig(self.OutputPrefix + "_DiffFilt.png")
+          image = imageio.imread(self.OutputPrefix + "_DiffFilt.png")
+          self.gif5.append(image)
+          imageio.mimwrite('DiffWithFilter.gif', self.gif5, format='.gif', fps=1)
+
+
+
+
+          ###################################################################################################
+
+###################################################################################################
+
+
+  def SaveLossPlot(self, lossArray, valLossArray, iterationArray, Title, FigureNumber = 0):
+
+    bestFileLoss = "bestFileLoss.pkl"
+    bestFileIteration = "bestFileIteration.pkl"
+
+    open_file = open(bestFileLoss, "rb")
+    bestFileLossArray = pickle.load(open_file)
+    open_file.close()
+
+    open_file = open(bestFileIteration, "rb")
+    bestFileLossIterationArray = pickle.load(open_file)
+    open_file.close()
+
+    given_value = iterationArray[-1]
+
+    closestValue = min(range(len(bestFileLossIterationArray)), key=lambda i: abs(bestFileLossIterationArray[i]-given_value))
+    
+    closestValue += 1
+    
+    fig = plt.figure(FigureNumber)
+    plt.clf()
+    plt.plot(iterationArray, lossArray, "-b", label="Training Loss")
+    plt.plot(iterationArray, valLossArray, "-r", label="Test Loss")
+    plt.plot(bestFileLossIterationArray[0:closestValue], bestFileLossArray[0:closestValue], "-g", label="Best Loss")
+    plt.xlabel("Iteration")
+    plt.ylabel("Loss")
+    plt.title(Title)
+    plt.legend(loc="upper right")
+    
+      
+    if self.UseBatchMode == False:
+        plt.ion()
+        plt.show()
+        plt.pause(0.001)
+        
+    lossFile_name = "loss.pkl"
+    valLossFile_name = "val_loss.pkl"
+    iterationFile_name = "iteration.pkl"
+    
+    plt.savefig(Title + ".png")
+    
+    open_file = open(lossFile_name, "wb")
+    pickle.dump(lossArray, open_file)
+    open_file.close()
+    
+    open_file = open(valLossFile_name, "wb")
+    pickle.dump(valLossArray, open_file)
+    open_file.close()
+    
+    open_file = open(iterationFile_name, "wb")
+    pickle.dump(iterationArray, open_file)
+    open_file.close()
+    
+
+
+###################################################################################################
+
 
 
   def Gauss3D(self, X, x0, y0, R):
@@ -230,7 +474,7 @@ class ToyModel3DCone:
 
   def train(self):
     '''
-    Perfrom the neural network training
+    Perform the neural network training
     '''
         
     print("Info: Creating %i data sets" % (self.TrainingBatchSize + self.TestBatchSize))
@@ -275,12 +519,16 @@ class ToyModel3DCone:
     XSingle = XTest[0:1]
     YSingle = YTest[0:1]
     if self.UseBatchMode == False:
-      self.Plot2D(XSingle, YSingle, "Original", 1)
+      self.SaveImages_Original(XSingle, YSingle, 0, "Original", 1, 0)
 
 
     TimesNoImprovement = 0
-    BestMeanSquaredError = 10**30 #sys.float_info.max
-
+    bestLoss = sys.maxsize
+    lossArray = []
+    valLossArray = []
+    iterationArray = []
+    performanceCheck = 20
+    
     for Iteration in range(0, 50000):
       
       # Take care of Ctrl-C -- does not work
@@ -290,27 +538,48 @@ class ToyModel3DCone:
       # Train
       history = Model.fit(XTrain, YTrain, verbose=2, batch_size=self.TrainingBatchSize,  validation_data=(XTest, YTest))
 
-        
+      newLoss = history.history['loss']
+      newLoss = newLoss[0]
+      newValLoss = history.history['val_loss']
+      newValLoss = newValLoss[0]
+      
       # Check performance: Mean squared error
-      if Iteration > 0 and Iteration % 20 == 0:
+      if Iteration > 0 and Iteration % performanceCheck == 0:
         #MeanSquaredError = sess.run(tf.nn.l2_loss(Output - YTest)/self.TestBatchSize,  feed_dict={X: XTest})
-        RunOut = Model.predict(XTest)
-        MeanSquaredError = math.sqrt(np.sum((YTest - RunOut)**2))
+        # RunOut = Model.predict(XTest)
+        # MeanSquaredError = math.sqrt(np.sum((YTest - RunOut)**2))
   
-        print("Iteration {} - MSE of test data: {}".format(Iteration, MeanSquaredError))
+        print("Iteration {} - Loss of test data: {}".format(Iteration, newLoss))
+        lossArray.append(newLoss)
+        valLossArray.append(newValLoss)
+        iterationArray.append(Iteration)
 
-        if MeanSquaredError <= BestMeanSquaredError:    # We need equal here since later ones are usually better distributed
-          BestMeanSquaredError = MeanSquaredError
+        if newLoss <= bestLoss:    # We need equal here since later ones are usually better distributed
+          bestLoss = newLoss
           TimesNoImprovement = 0
+              
+              
+          self.SaveLossPlot(lossArray, valLossArray, iterationArray, "Loss_vs_Iteration", 3)
+          
+          Model.save('currRunBest.h5')
+          
+          # savedModel= models.load_model('gfgModel.h5')
+          # savedModel.summary()
           
           #Saver.save(sess, "model.ckpt")
           
           # Test just the first test case:
           YOutSingle = Model.predict(XSingle)
-          
-          if self.UseBatchMode == False:
-            self.Plot2D(XSingle, YOutSingle, "Reconstructed at iteration {}".format(Iteration), 2)
-          
+
+          self.SaveImages_Original(XSingle, YOutSingle, Iteration, "Unfiltered Image ", 2, 0)
+          self.SaveImages_Original(XSingle, YOutSingle, Iteration,  "Filtered Image", 3, 1)
+          self.SaveImages_Compare(XSingle, YSingle, YOutSingle, Iteration,
+                              "Diff. between Original and Reconstructed  without smoothening", 4, 0)
+          self.SaveImages_Compare(XSingle, YSingle, YOutSingle, Iteration,
+                              "Diff. between Original and Reconstructed at iteration {} with smoothening", 5, 1)
+
+
+
         else:
           TimesNoImprovement += 1
       else:
@@ -323,7 +592,7 @@ class ToyModel3DCone:
 
       if TimesNoImprovement == 100:
         print("No improvement for 100 rounds")
-        break;
+        break
       
       # end: iterations loop
 
